@@ -1,0 +1,32 @@
+"use strict";
+
+const { AuditLogEvent } = require("discord.js");
+const AntiNukeMemory    = require("../core/antinukeMemory");
+const resolveAudit      = require("../core/resolveAuditAdvanced");
+
+module.exports = (client) => {
+    client.on("emojiCreate", async (emoji) => {
+        const g = AntiNukeMemory.get(emoji.guild.id);
+        if (!g?.enabled || g.modules?.antiemoji === false) return;
+
+        try {
+            const result = await resolveAudit(emoji.guild, AuditLogEvent.EmojiCreate, emoji.id);
+            if (!result) return;
+
+            const { executorId } = result;
+            if (!executorId || executorId === client.user.id) return;
+            if (executorId === emoji.guild.ownerId || g.extraOwners?.has(executorId)) return;
+            if (await client.sntl.isTrusted(emoji.guild, g, executorId, "emoji_create")) return;
+
+            await emoji.delete("Luna: Unauthorized emoji creation").catch(() => {});
+            await client.logSendHandler.send(emoji.guild, g, {
+                executorId,
+                actionType:    "emoji_create",
+                reason:        `Created emoji :${emoji.name}: — deleted`,
+                targetDetails: emoji.id,
+            });
+        } catch (err) {
+            client.logger.error(`[antiEmojiCreate] ${err.message}`);
+        }
+    });
+};
